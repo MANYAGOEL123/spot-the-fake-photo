@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spot the Fake Photo — Live Scanner</title>
+<style>
+  :root {
+    --bg: #0a0d10;
+    --panel: #12171c;
+    --line: #232b32;
+    --ink: #d7dee3;
+    --dim: #6b7680;
+    --real: #33d17a;
+    --screen: #ff5c5c;
+    --neutral: #4cd4e8;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 16px 60px;
+  }
+
+  header {
+    width: 100%;
+    max-width: 640px;
+    margin-bottom: 20px;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--neutral);
+    text-transform: uppercase;
+    margin: 0 0 6px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+
+  .sub {
+    font-size: 13px;
+    color: var(--dim);
+    margin: 0;
+  }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    aspect-ratio: 4 / 3;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+
+  video, canvas.mirror {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  canvas.mirror { display: none; }
+
+  /* Scanning corner brackets - the signature element. Color shifts
+     live with the current verdict. */
+  .bracket {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    border: 2px solid var(--neutral);
+    transition: border-color 220ms ease, opacity 220ms ease;
+    opacity: 0.85;
+  }
+  .bracket.tl { top: 14px; left: 14px; border-right: none; border-bottom: none; }
+  .bracket.tr { top: 14px; right: 14px; border-left: none; border-bottom: none; }
+  .bracket.bl { bottom: 14px; left: 14px; border-right: none; border-top: none; }
+  .bracket.br { bottom: 14px; right: 14px; border-left: none; border-top: none; }
+
+  .scanline {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--neutral), transparent);
+    opacity: 0;
+    box-shadow: 0 0 8px 1px var(--neutral);
+  }
+  .scanline.active {
+    animation: sweep 1.1s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0%   { top: 6%;  opacity: 0; }
+    10%  { opacity: 0.9; }
+    50%  { top: 94%; opacity: 0.9; }
+    90%  { opacity: 0; }
+    100% { top: 94%; opacity: 0; }
+  }
+
+  .hud-readout {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    pointer-events: none;
+  }
+
+  .placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 10px;
+    color: var(--dim);
+    font-size: 13px;
+    text-align: center;
+    padding: 0 20px;
+  }
+
+  button {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 3px;
+    border: 1px solid var(--neutral);
+    background: transparent;
+    color: var(--neutral);
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  button:hover { background: var(--neutral); color: #06181c; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:disabled:hover { background: transparent; color: var(--neutral); }
+
+  .panel {
+    width: 100%;
+    max-width: 640px;
+    margin-top: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 18px 20px;
+  }
+
+  .verdict-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .verdict {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    transition: color 220ms ease;
+  }
+  .verdict.real { color: var(--real); }
+  .verdict.screen { color: var(--screen); }
+  .verdict.idle { color: var(--dim); font-size: 16px; font-weight: 500; }
+
+  .confidence {
+    font-family: var(--mono);
+    font-size: 20px;
+    color: var(--ink);
+  }
+
+  .bar-track {
+    height: 8px;
+    background: #1e262c;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 4px;
+    position: relative;
+  }
+  .bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--neutral);
+    transition: width 180ms ease, background 220ms ease;
+  }
+  .bar-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 0.04em;
+  }
+
+  .telemetry {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .telemetry-item .label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .telemetry-item .value {
+    font-family: var(--mono);
+    font-size: 15px;
+    color: var(--ink);
+  }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .note {
+    max-width: 640px;
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.5;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanline.active { animation: none; opacity: 0.4; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <p class="eyebrow">Spot the Fake Photo — Live Scanner</p>
+  <h1>Real photo, or a photo of a screen?</h1>
+  <p class="sub">Point your camera at something. The model re-analyzes the live feed continuously, same pipeline as predict.py.</p>
+</header>
+
+<div class="stage" id="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="captureCanvas" class="mirror"></canvas>
+
+  <div class="placeholder" id="placeholder">
+    <span>Camera not started</span>
+    <button id="startBtn">Start camera</button>
+  </div>
+
+  <div class="bracket tl"></div>
+  <div class="bracket tr"></div>
+  <div class="bracket bl"></div>
+  <div class="bracket br"></div>
+  <div class="scanline" id="scanline"></div>
+
+  <div class="hud-readout">
+    <span id="hudLeft">STANDBY</span>
+    <span id="hudRight">--</span>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="verdict-row">
+    <div class="verdict idle" id="verdict">Awaiting first frame&hellip;</div>
+    <div class="confidence" id="confidenceText">--%</div>
+  </div>
+
+  <div class="bar-track">
+    <div class="bar-fill" id="barFill"></div>
+  </div>
+  <div class="bar-labels">
+    <span>0.0 — real</span>
+    <span>1.0 — screen recapture</span>
+  </div>
+
+  <div class="telemetry">
+    <div class="telemetry-item">
+      <div class="label">Threshold</div>
+      <div class="value" id="thresholdVal">--</div>
+    </div>
+    <div class="telemetry-item">
+      <div class="label">Latency</div>
+      <div class="value" id="latencyVal">--</div>
+    </div>
+    <div class="telemetry-item">
+      <div class="label">Frames analyzed</div>
+      <div class="value" id="frameCount">0</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="toggleBtn" disabled>Stop scanning</button>
+  </div>
+</div>
+
+<p class="note">
+  Runs entirely on your machine — the browser sends each captured frame to a local
+  Flask server (app.py) running the exact same utils.py feature extraction and
+  trained model as predict.py. No frames are saved to disk, nothing leaves localhost.
+</p>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('captureCanvas');
+const placeholder = document.getElementById('placeholder');
+const startBtn = document.getElementById('startBtn');
+const toggleBtn = document.getElementById('toggleBtn');
+const verdictEl = document.getElementById('verdict');
+const confidenceEl = document.getElementById('confidenceText');
+const barFill = document.getElementById('barFill');
+const thresholdVal = document.getElementById('thresholdVal');
+const latencyVal = document.getElementById('latencyVal');
+const frameCountEl = document.getElementById('frameCount');
+const scanline = document.getElementById('scanline');
+const hudLeft = document.getElementById('hudLeft');
+const hudRight = document.getElementById('hudRight');
+const brackets = document.querySelectorAll('.bracket');
+
+let stream = null;
+let running = false;
+let frameCount = 0;
+let intervalId = null;
+const INTERVAL_MS = 900;
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 960 } },
+      audio: false,
+    });
+  } catch (err) {
+    placeholder.innerHTML = `<span>Camera access denied or unavailable.<br>(${err.message})</span>`;
+    return;
+  }
+  video.srcObject = stream;
+  placeholder.style.display = 'none';
+  toggleBtn.disabled = false;
+  startScanning();
+}
+
+function startScanning() {
+  running = true;
+  toggleBtn.textContent = 'Stop scanning';
+  scanline.classList.add('active');
+  hudLeft.textContent = 'SCANNING';
+  intervalId = setInterval(captureAndSend, INTERVAL_MS);
+  captureAndSend();
+}
+
+function stopScanning() {
+  running = false;
+  toggleBtn.textContent = 'Resume scanning';
+  scanline.classList.remove('active');
+  hudLeft.textContent = 'PAUSED';
+  clearInterval(intervalId);
+}
+
+toggleBtn.addEventListener('click', () => {
+  if (running) { stopScanning(); } else { startScanning(); }
+});
+startBtn.addEventListener('click', startCamera);
+
+function captureAndSend() {
+  if (!video.videoWidth) return;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+  fetch('/predict', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: dataUrl }),
+  })
+    .then(r => r.json())
+    .then(handleResult)
+    .catch(err => {
+      hudLeft.textContent = 'ERROR';
+      hudRight.textContent = err.message.slice(0, 24);
+    });
+}
+
+function handleResult(data) {
+  if (data.error) {
+    hudLeft.textContent = 'ERROR';
+    hudRight.textContent = data.error.slice(0, 30);
+    return;
+  }
+
+  frameCount += 1;
+  frameCountEl.textContent = frameCount;
+
+  const p = data.probability;
+  const pct = Math.round(p * 100);
+  const isScreen = data.is_screen;
+
+  confidenceEl.textContent = pct + '%';
+  barFill.style.width = pct + '%';
+  thresholdVal.textContent = data.threshold.toFixed(2);
+  latencyVal.textContent = data.latency_ms.toFixed(0) + ' ms';
+
+  const color = isScreen ? 'var(--screen)' : 'var(--real)';
+  barFill.style.background = color;
+  brackets.forEach(b => b.style.borderColor = color);
+
+  verdictEl.classList.remove('idle', 'real', 'screen');
+  if (isScreen) {
+    verdictEl.textContent = 'Screen recapture detected';
+    verdictEl.classList.add('screen');
+    hudRight.textContent = 'SCREEN ' + pct + '%';
+  } else {
+    verdictEl.textContent = 'Looks like a real photo';
+    verdictEl.classList.add('real');
+    hudRight.textContent = 'REAL ' + pct + '%';
+  }
+  hudLeft.textContent = running ? 'SCANNING' : 'PAUSED';
+}
+</script>
+
+</body>
+</html>
