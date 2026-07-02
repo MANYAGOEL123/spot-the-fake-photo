@@ -1,36 +1,101 @@
 # Spot the Fake Photo — Screen Recapture Detector
 
-Given a single image, predicts whether it's a **real photo (0)** or a
-**photo of a screen/printout showing another image (1)** — i.e. a
-"recapture."
+Given a single image, predicts whether it's a **real photo (0)** or a **photo of a screen/printout showing another image (1)** — i.e. a "screen recapture."
+
+---
+
+## GitHub Repository
+
+**Repository:**  
+https://github.com/MANYAGOEL123/spot-the-fake-photo
+
+---
+
+## Live Demo
+
+A live webcam demo is available where the application continuously predicts whether the camera is viewing a real scene or a screen recapture.
+
+**Live Demo:**  
+https://YOUR_RENDER_URL.onrender.com
+
+*(Replace this URL after deploying on Render.)*
+
+---
+
+## Example
+
+```bash
+python predict.py some_image.jpg
+```
+
+Example output:
 
 ```
-python predict.py some_image.jpg
 0.93
 ```
 
+where:
+
+- **0 → Real Photo**
+- **1 → Screen Recapture**
+
+---
+
 ## Approach (short version)
 
-No deep learning, no pretrained vision backbone. The pipeline extracts
-~35 classical, physically-motivated features per image using OpenCV /
-scikit-image / scipy — frequency-domain (FFT/moire/aliasing), texture
-(LBP, wavelet energy), noise statistics, glare/specular/reflection
-heuristics, sharpness, and color-moment features — then feeds them into
-whichever of (Logistic Regression, small Random Forest) cross-validates
-best. See `report.md` for the full write-up, honest accuracy numbers,
-and the two required metrics (latency, cost-per-image).
+No deep learning, no pretrained vision backbone.
 
-**Training-only data augmentation**: each training photo also
-contributes 4 augmented variants (small rotation, brightness/contrast
-jitter, crop/zoom, saturation jitter, JPEG re-compression) to make the
-classifier robust to minor shooting-condition differences. This is
-leakage-safe — augmented copies of a photo are grouped so they can never
-end up split across train/validation/test (see `train.py`'s
-`GroupKFold` usage). Validation and the final held-out test set always
-use single, un-augmented images, so the reported accuracy is honest and
-reflects exactly what `predict.py` sees at inference time.
+The pipeline extracts **35 handcrafted, physically motivated image features** using OpenCV, scikit-image and SciPy, including:
+
+- Frequency-domain (FFT / Moiré / Aliasing)
+- Local Binary Patterns (LBP)
+- Wavelet energy
+- Noise statistics
+- Reflection & glare heuristics
+- Sharpness
+- Color statistics
+
+The extracted feature vector is used to train multiple machine learning models (Logistic Regression and Random Forest). The best-performing model is automatically selected using cross-validation, probability calibration and validation-set threshold optimization.
+
+See **report.md** for the complete methodology, evaluation metrics, latency and cost-per-image.
+
+### Training-only Data Augmentation
+
+Each training photo contributes four augmented variants:
+
+- Small rotations
+- Brightness & contrast jitter
+- Crop / Zoom
+- Saturation variation
+- JPEG recompression
+
+This process is completely leakage-safe.
+
+Augmented copies of an image are grouped using `GroupKFold`, ensuring that different versions of the same image never appear across train, validation and test splits.
+
+Validation and final testing always use only original, unaugmented images.
+
+---
+
+## Performance
+
+**Held-out Test Accuracy:** **84.4%**
+
+Additional evaluation metrics (Precision, Recall, F1-score, ROC-AUC, Confusion Matrix, latency and memory usage) are available in **report.md**.
+
+---
 
 ## Setup
+
+### Windows
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Linux / macOS
 
 ```bash
 python -m venv venv
@@ -38,18 +103,35 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+---
+
 ## Dataset
 
 ```
 dataset/
-├── real/       # 84 photos (label 0)
-└── screen/     # 51 photos (label 1)
+├── real/       # 88 photos (label 0)
+└── screen/     # 123 photos (label 1)
 ```
 
-Self-collected: real-world photos (including deliberate "decoys" —
-glass, glossy floors, window grilles, a screen turned off) and
-screen/laptop recaptures across varied lighting and angles. See
-`report.md` for the full write-up.
+**Dataset Summary**
+
+- Real Photos: **88**
+- Screen Recaptures: **123**
+- Total Images: **211**
+
+The dataset is entirely self-collected and contains real-world photos together with screen recaptures captured under varying lighting conditions, viewing angles and screen brightness.
+
+It also includes difficult "decoy" cases such as:
+
+- Glass surfaces
+- Glossy floors
+- Window reflections
+- Switched-off monitors
+- Different laptop displays
+
+See **report.md** for additional details.
+
+---
 
 ## Train
 
@@ -57,10 +139,36 @@ screen/laptop recaptures across varied lighting and angles. See
 python train.py
 ```
 
-Prints 5-fold CV metrics per model, the auto-selected best model, tuned
-decision threshold, final held-out test metrics (Accuracy / Precision /
-Recall / F1 / ROC-AUC / Confusion Matrix), and latency/memory numbers.
-Saves the model bundle to `model/best_model.joblib`.
+Training performs:
+
+- Feature extraction
+- Data augmentation
+- Group-aware 5-fold Cross Validation
+- Hyperparameter search
+- Probability calibration
+- Decision threshold optimization
+
+The script prints:
+
+- Cross-validation metrics
+- Selected best model
+- Tuned decision threshold
+- Accuracy
+- Precision
+- Recall
+- F1-score
+- ROC-AUC
+- Confusion Matrix
+- Latency
+- Memory usage
+
+The trained model is saved as:
+
+```
+model/best_model.joblib
+```
+
+---
 
 ## Predict
 
@@ -68,39 +176,72 @@ Saves the model bundle to `model/best_model.joblib`.
 python predict.py path/to/image.jpg
 ```
 
-Prints one float in `[0, 1]` to stdout (0 = real, 1 = screen). Logs and
-errors go to stderr, so stdout is always machine-clean. Non-zero exit
-code on failure (bad path, corrupt file, etc.).
+Prints one floating-point probability in **[0,1]**.
 
-## Live demo (optional)
+```
+0 = Real Photo
+1 = Screen Recapture
+```
+
+Logs and errors are written to **stderr**, ensuring stdout always contains only the prediction.
+
+---
+
+## Live Demo (Optional)
 
 ```bash
 python app.py
 ```
 
-Then open **http://localhost:5000** and allow camera access. Point
-your camera at something (a real object, or a screen showing another
-photo) and the page continuously re-analyzes the live feed - the
-targeting brackets and readout update every ~900ms with the live
-probability.
-
-This is a thin wrapper, not a separate implementation: `app.py`
-imports `extract_features` from `utils.py` and loads the exact same
-`model/best_model.joblib` bundle that `train.py` produces and
-`predict.py` uses - a browser-facing view of the same pipeline, not a
-different one. Runs entirely on localhost; no frame is ever written to
-disk.
-
-## Files
+Then open:
 
 ```
-predict.py         # required one-line CLI predictor
-train.py            # trains + evaluates + saves the model
-utils.py             # feature extraction (the actual "secret sauce")
-app.py                # optional live-demo backend (reuses utils.py + the saved model)
-templates/index.html  # optional live-demo frontend (camera capture + live readout)
+http://localhost:5000
+```
+
+Allow camera access.
+
+Point the camera at either:
+
+- a real object
+- or a screen displaying another image
+
+The interface continuously updates the prediction every ~900 ms.
+
+This is **not a separate implementation**.
+
+`app.py` imports the same `extract_features()` function from `utils.py` and loads the exact same `model/best_model.joblib` used by `predict.py`.
+
+No separate model is used.
+
+No captured frame is written to disk.
+
+---
+
+## Project Structure
+
+```
+predict.py               # Required CLI predictor
+train.py                 # Training & evaluation pipeline
+utils.py                 # Feature extraction
+app.py                   # Live demo backend (Flask)
+templates/index.html     # Live demo frontend
 requirements.txt
-report.md            # the half-page note: approach, accuracy, latency, cost, next steps
-model/best_model.joblib   # produced by train.py
-dataset/real, dataset/screen  # your photos go here
+README.md
+report.md
+model/
+└── best_model.joblib
+
+dataset/
+├── real/
+└── screen/
 ```
+
+---
+
+## Author
+
+**Manya Goel**
+
+GitHub:  
+https://github.com/MANYAGOEL123

@@ -11,3 +11,4 @@ psutil>=5.9
 # Only needed for the optional live demo (app.py) - not required for
 # train.py / predict.py.
 flask>=3.0
+gunicorn>=23.0
