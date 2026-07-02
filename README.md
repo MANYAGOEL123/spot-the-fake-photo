@@ -16,9 +16,15 @@ https://github.com/MANYAGOEL123/spot-the-fake-photo
 A live webcam demo is available where the application continuously predicts whether the camera is viewing a real scene or a screen recapture.
 
 **Live Demo:**  
-https://YOUR_RENDER_URL.onrender.com
+https://spot-the-fake-photo-xa6t.onrender.com
 
-*(Replace this URL after deploying on Render.)*
+## Live Demo Preview
+
+The application provides a browser-based interface that continuously analyzes webcam frames using the same prediction pipeline as `predict.py`.
+
+<p align="center">
+  <img src="assets/live_demo.png" width="850" alt="Live Demo">
+</p>
 
 ---
 
@@ -36,9 +42,8 @@ Example output:
 
 where:
 
-- **0 → Real Photo**
-- **1 → Screen Recapture**
-
+- Values close to **0** indicate a **real photo**.
+- Values close to **1** indicate a **screen recapture**.
 ---
 
 ## Approach (short version)
